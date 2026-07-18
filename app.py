@@ -175,9 +175,41 @@ if uploaded_file is not None:
     with p3:
         metric_card("Duplicate rows", int(df_proc.duplicated().sum()))
 
-    # Encode target
-    if df_proc["Churn"].dtype == "object":
-        df_proc["Churn"] = df_proc["Churn"].map({"Yes": 1, "No": 0}).fillna(df_proc["Churn"])
+    # Robust target encoding
+    churn_col = None
+    for col in df_proc.columns:
+        if col.strip().lower() == "churn":
+            churn_col = col
+            break
+
+    if churn_col is None:
+        st.error("⚠️ Dataset must contain a 'Churn' column.")
+        st.stop()
+
+    if churn_col != "Churn":
+        df_proc.rename(columns={churn_col: "Churn"}, inplace=True)
+
+    df_proc["Churn"] = (
+        df_proc["Churn"]
+        .astype(str)
+        .str.strip()
+        .str.lower()
+        .map({
+            "yes": 1,
+            "no": 0,
+            "1": 1,
+            "0": 0,
+            "true": 1,
+            "false": 0
+        })
+    )
+
+    if df_proc["Churn"].isna().any():
+        invalid_values = df_proc.loc[df_proc["Churn"].isna(), "Churn"].unique()
+        st.error("Invalid values found in the Churn column.")
+        st.write("Unsupported values:", invalid_values)
+        st.stop()
+
     df_proc["Churn"] = df_proc["Churn"].astype(int)
 
     # Encode categorical features (keep a display copy before encoding)
