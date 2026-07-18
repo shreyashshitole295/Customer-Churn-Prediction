@@ -232,10 +232,14 @@ if uploaded_file is not None:
     tab1, tab2, tab3 = st.tabs(["Correlation Heatmap", "Churn Distribution", "Feature Explorer"])
 
     with tab1:
-        fig, ax = plt.subplots(figsize=(9, 7))
-        sns.heatmap(df_encoded.corr(), cmap="coolwarm", ax=ax, center=0)
-        ax.set_title("Correlation Heatmap")
-        st.pyplot(fig)
+        numeric_df = df_encoded.apply(pd.to_numeric, errors="coerce").fillna(0)
+        if numeric_df.shape[1] >= 2:
+            fig, ax = plt.subplots(figsize=(9, 7))
+            sns.heatmap(numeric_df.corr(), cmap="coolwarm", ax=ax, center=0)
+            ax.set_title("Correlation Heatmap")
+            st.pyplot(fig)
+        else:
+            st.warning("Not enough numeric columns available for correlation heatmap.")
 
     with tab2:
         churn_counts = df_display["Churn"].map({0: "No", 1: "Yes"}).value_counts().reset_index()
