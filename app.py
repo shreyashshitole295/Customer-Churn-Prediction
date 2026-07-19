@@ -145,9 +145,14 @@ if uploaded_file is not None:
     # ------------------------------------------------------------------
     st.subheader("🧹 Automatic Preprocessing")
 
-    # Convert TotalCharges-like numeric-looking object columns
+    # Convert TotalCharges-like numeric-looking text columns.
+    # NOTE: newer pandas versions may read text columns in as a "string"
+    # extension dtype instead of plain "object", so we check for any
+    # non-numeric dtype rather than dtype == "object" specifically -
+    # otherwise these columns get silently skipped here (and later during
+    # encoding), leaving raw text in the data fed to the model.
     for col in df_proc.columns:
-        if df_proc[col].dtype == "object" and col != "Churn":
+        if not pd.api.types.is_numeric_dtype(df_proc[col]) and col != "Churn":
             converted = pd.to_numeric(df_proc[col], errors="coerce")
             # If most values convert successfully, treat as numeric
             if converted.notnull().mean() > 0.9:
@@ -161,8 +166,8 @@ if uploaded_file is not None:
             df_proc[col] = df_proc[col].fillna(df_proc[col].median())
 
     # Fill categorical missing values with mode
-    for col in df_proc.select_dtypes(include=["object"]).columns:
-        if df_proc[col].isnull().sum() > 0:
+    for col in df_proc.columns:
+        if not pd.api.types.is_numeric_dtype(df_proc[col]) and df_proc[col].isnull().sum() > 0:
             df_proc[col] = df_proc[col].fillna(df_proc[col].mode()[0])
 
     missing_after = int(df_proc.isnull().sum().sum())
@@ -217,10 +222,19 @@ if uploaded_file is not None:
     df_encoded = df_proc.copy()
     encoders = {}
     for col in df_encoded.columns:
-        if df_encoded[col].dtype == "object":
+        if not pd.api.types.is_numeric_dtype(df_encoded[col]):
             le = LabelEncoder()
             df_encoded[col] = le.fit_transform(df_encoded[col].astype(str))
             encoders[col] = le
+
+    # Final safety net: force every feature column to plain numeric so
+    # RandomForestClassifier.fit()/check_array() never sees leftover text,
+    # booleans-as-objects, or exotic pandas extension dtypes.
+    for col in df_encoded.columns:
+        if col == "Churn":
+            continue
+        df_encoded[col] = pd.to_numeric(df_encoded[col], errors="coerce").fillna(0).astype("float64")
+    df_encoded["Churn"] = df_encoded["Churn"].astype(int)
 
     st.success("Preprocessing complete: missing values handled, categorical columns encoded, target mapped to 0/1.")
 
