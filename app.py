@@ -235,7 +235,35 @@ if uploaded_file is not None:
         numeric_df = df_encoded.apply(pd.to_numeric, errors="coerce").fillna(0)
         if numeric_df.shape[1] >= 2:
             fig, ax = plt.subplots(figsize=(9, 7))
-            sns.heatmap(numeric_df.corr(), cmap="coolwarm", ax=ax, center=0)
+            # Build a plain numpy float64 array column-by-column instead of
+            # calling numeric_df.corr() directly. On some pandas builds the
+            # DataFrame may contain extension/Arrow-backed dtypes, and
+            # DataFrame.corr() (via to_numpy()/block-interleaving) can raise
+            # a ValueError when it tries to cast a mixed block manager to a
+            # single dtype. Converting each column individually sidesteps
+            # that failure mode.
+            clean_cols = []
+            for col in numeric_df.columns:
+                col_values = pd.to_numeric(numeric_df[col], errors="coerce").fillna(0)
+                clean_cols.append(np.asarray(col_values, dtype="float64"))
+            clean_arr = np.column_stack(clean_cols)
+
+            # Guard against zero-variance columns, which would otherwise
+            # produce NaNs/warnings from np.corrcoef.
+            stds = clean_arr.std(axis=0)
+            safe_cols = stds > 0
+            corr_values = np.eye(clean_arr.shape[1])
+            if safe_cols.sum() >= 2:
+                sub_corr = np.corrcoef(clean_arr[:, safe_cols], rowvar=False)
+                idx = np.ix_(safe_cols, safe_cols)
+                corr_values[idx] = sub_corr
+            corr_matrix = pd.DataFrame(
+                corr_values,
+                index=numeric_df.columns,
+                columns=numeric_df.columns,
+            )
+
+            sns.heatmap(corr_matrix, cmap="coolwarm", ax=ax, center=0)
             ax.set_title("Correlation Heatmap")
             st.pyplot(fig)
         else:
